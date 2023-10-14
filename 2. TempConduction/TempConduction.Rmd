@@ -1,0 +1,250 @@
+---
+title: "TempConduction 열전도도"
+author: "서강대학교 20121802 김재현"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+### 데이터 준비
+
+```{r}
+getwd()
+```
+#setwd('./2. TempConduction')
+```{r}
+TempConduction = read.csv('TempConduction.csv')
+head(TempConduction)
+```
+
+column은 막대의 재료
+row는 열화상 카메라(ir camera)에 감지된, 같은 y값을 갖는 1픽셀내 온도
+
+```{r}
+str(TempConduction)
+```
+```{r}
+library(tidyverse)
+```
+
+### range값 구하기 for normalization
+```{r}
+CuDiff = diff(range(TempConduction$Cu))
+GlassDiff = diff(range(TempConduction$Glass))
+FeDiff = diff(range(TempConduction$Fe))
+Cu.CarbonDiff = diff(range(TempConduction$Cu.Carbon))
+Glass.CarbonDiff = diff(range(TempConduction$Glass.Carbon))
+Fe.CarbonDiff = diff(range(TempConduction$Fe.Carbon))
+```
+---
+
+### Normalized TempConduction 
+```{r}
+TempConductionN = bind_cols(TempConduction$Cu/CuDiff,
+                            TempConduction$Glass/GlassDiff,
+                            TempConduction$Fe/FeDiff,
+                            TempConduction$Cu.Carbon/Cu.CarbonDiff,
+                            TempConduction$Glass.Carbon/Glass.CarbonDiff,
+                            TempConduction$Fe.Carbon/Fe.CarbonDiff)
+```
+
+### column 변수에 이름 붙히기 + No 변수 추가
+
+```{r}
+TempConductionN %>% rename('CuN' = '...1','GlassN'= '...2','FeN'= '...3',
+                           'Cu.CarbonN'= '...4','Glass.CarbonN'= '...5',
+                           'Fe.CarbonN'= '...6') -> TempConductionN
+TempConductionN$No = c(1:162)
+```
+
+###wide to long type(for tidy data)
+```{r}
+TempConductionN %>% pivot_longer(c(CuN:Fe.CarbonN),names_to = 'materials',
+                                 values_to = 'temp')->TidyTempConN
+head(TidyTempConN)
+```
+
+### Plotting
+
+```{r}
+ggplot(TidyTempConN) + geom_line(aes(x = No, y = temp, color = materials)) +
+  coord_cartesian(xlim = c(140,160)) + 
+  geom_vline(xintercept = 154, linetype = 'dotted', color = 'red') +
+  theme_classic()
+```
+plot을 그려보니, 160행부터 156, 157행까지 온도가 줄어들다가, 154행에서 온도가 정점을 찍는다.
+해당 실험 열 화상 이미지를 확인해봤을 때, hotplate와 막대가 닿는 곳에서 온도가 다시 올라가는 것을 확인했다.
+결과분석에서는 막대의 온도분포를 확인해야하기 때문에 **154행부터 1행까지의 결과만 활용하는 것이 합당하다고 판단했다.**
+
+### TempConduction의 154 다음 행 부터 제거 및 다시 normalize + No를 길이로 변경 
+```{r}
+TempConduction = TempConduction[-155:-162,]
+```
+
+### range값 구하기 for normalization
+
+자료 길이 변경으로 다시 계산
+
+```{r}
+CuDiff = diff(range(TempConduction$Cu))
+GlassDiff = diff(range(TempConduction$Glass))
+FeDiff = diff(range(TempConduction$Fe))
+Cu.CarbonDiff = diff(range(TempConduction$Cu.Carbon))
+Glass.CarbonDiff = diff(range(TempConduction$Glass.Carbon))
+Fe.CarbonDiff = diff(range(TempConduction$Fe.Carbon))
+```
+
+### Normalized TempConduction 2
+
+```{r}
+TempConductionN2 = bind_cols(TempConduction$Cu/CuDiff,
+                             TempConduction$Glass/GlassDiff,
+                             TempConduction$Fe/FeDiff,
+                             TempConduction$Cu.Carbon/Cu.CarbonDiff,
+                             TempConduction$Glass.Carbon/Glass.CarbonDiff,
+                             TempConduction$Fe.Carbon/Fe.CarbonDiff)
+
+TempConductionN2 %>% rename('CuN' = '...1','GlassN'= '...2','FeN'= '...3',
+                           'Cu.CarbonN'= '...4','Glass.CarbonN'= '...5',
+                           'Fe.CarbonN'= '...6') -> TempConductionN2
+head(TempConductionN2)
+```
+### No를 길이(length)로 변경
+
+No순서를 반대로 하여, length가 hotplate기준으로 막대 축방향 거리가 되도록 한다.
+막대길이가 300mm라는 물성치가 주어진 상태
+
+```{r}
+TempConductionN2$length = rev(c(1:154))
+TempConductionN2$length = (300/154)*TempConductionN2$length
+head(TempConductionN2)
+```
+
+### tidy한 데이터로 변환
+```{r}
+TempConductionN2 %>% pivot_longer(c(CuN:Fe.CarbonN),names_to = 'materials',
+                                 values_to = 'temp')->TidyTempConN2
+head(TidyTempConN2)
+```
+
+### plotting
+
+```{r}
+ggplot(TidyTempConN2) + geom_line(aes(x = length, y = temp, color = materials)) +
+  ylab('Normalized Temparature') +
+  xlab('Length(mm)') +
+  labs(title = 'Length - Normalized Temparature', caption = 'length는 hot plate를 기준으로 막대 축방향 거리' ) +
+  #coord_cartesian(xlim = c(140,160)) + 
+  theme_classic(base_family = 'NanumGothic')
+```
+
+### Thermal Conductivity 계산
+
+```{r}
+#length를 meter 로 단위변환
+TempConduction$Length = TempConductionN2$length*10^(-3)
+
+# Temp 단위를 kelvin으로 변환(celcius +273.15)
+TempConduction$CuK = TempConduction$Cu + 273.15
+TempConduction$GlassK = TempConduction$Glass + 273.15
+TempConduction$FeK = TempConduction$Fe + 273.15
+
+TempConduction$Cu.CarbonK = TempConduction$Cu.Carbon + 273.15
+TempConduction$Glass.CarbonK = TempConduction$Glass.Carbon + 273.15
+TempConduction$Fe.CarbonK = TempConduction$Fe.Carbon + 273.15
+```
+
+### Cu 열전도도 계산
+```{r}
+#Cu
+TempConduction$CuThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$CuK)*
+  (TempConduction$CuK - 293.35) * 
+  (TempConduction$Length)^2
+mean(TempConduction$CuThermalC)
+```
+```{r}
+#방사율 보정
+1.993109 * 1/0.04
+```
+실제 Cu 의 열전도도는 385 
+
+
+### Glass 열전도도 계산
+```{r}
+TempConduction$GlassThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$GlassK)*
+  (TempConduction$GlassK - 293.35) * 
+  (TempConduction$Length)^2
+mean(TempConduction$GlassThermalC)
+```
+```{r}
+# 방사율 보정 
+2.080402 * 1/0.95
+```
+
+유리의 실제 열전도도는 1
+
+### Fe 열전도도 계산
+```{r}
+TempConduction$FeThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$FeK)*
+  (TempConduction$FeK - 293.35) * 
+  (TempConduction$Length)^2
+mean(TempConduction$FeThermalC)
+```
+```{r}
+# 방사율 보정 
+2.560583 * 1/0.06
+```
+
+철 실제 열전도도 79.5
+
+방사율 보정을 해도 오차가 많이 난다. -> 열적 평형 이뤄지지 않아서 충분히 열이 전파되지 않은 상황일수 있다.
+
+### 각 재료에 Carbon spray 뿌린 막대 열전도도 계산
+
+방사율 보정은 하지 않았음.
+
+### Cu.Carbon 열전도도
+```{r}
+TempConduction$Cu.CarbonThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$Cu.CarbonK)*
+  (TempConduction$Cu.CarbonK - 293.35) * 
+  (TempConduction$Length)^2
+  
+mean(TempConduction$Cu.CarbonThermalC)
+```
+
+### Glass.Carbon 열전도도
+```{r}
+TempConduction$Glass.CarbonThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$Glass.CarbonK)*
+  (TempConduction$Glass.CarbonK - 293.35) * 
+  (TempConduction$Length)^2
+  
+mean(TempConduction$Glass.CarbonThermalC)
+```
+
+### Fe.Carbon 열전도도
+```{r}
+TempConduction$Fe.CarbonThermalC = 0.01257*25/
+  (2*0.00001257*TempConduction$Fe.CarbonK)*
+  (TempConduction$Fe.CarbonK - 293.35) * 
+  (TempConduction$Length)^2
+
+mean(TempConduction$Fe.CarbonThermalC)
+```
+
+---
+
+### 일부 데이터 추출 : length, 구리, 유리, 철
+```{r}
+TempC = tibble(Length = rev(TempConduction$Length), Cu = rev(TempConduction$Cu),
+       Glass = rev(TempConduction$Glass), Fe = rev(TempConduction$Fe) )
+head(TempC)
+````
+```{r}
+TempC %>% pivot_longer(c(Cu:Fe), names_to = 'materials',values_to = 'temp') ->
+  TempCtidy
+head(TempCtidy)
+```
